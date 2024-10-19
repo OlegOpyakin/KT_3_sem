@@ -14,11 +14,6 @@ void parse(char* argv){
 
     while (read = readdir(dp)) {
         if(read->d_name[0] != '.'){
-            //char string[1024];
-            //strcat(string, argv);
-            //strcat(string, "/");
-            //strcat(string, read->d_name);
-            //parse(string);
             printf("#%llu \t%hhu \t%s\n", (long long int)read->d_ino, read->d_type, read->d_name);
             sprintf(line, "%s/%s", argv, read->d_name);
             if(read->d_type == DT_DIR){
