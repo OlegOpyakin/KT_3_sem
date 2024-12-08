@@ -28,10 +28,11 @@
 #define S_IXOTH 0000001    /* X for other */
 
 
-struct CompileFlags{ // struct to keep our compiling flags
+struct CompileFlags{
     int flag_R_, flag_l_, flag_i_, flag_a_, flag_d_;
 };
 
+//------------------------------------------------------------------------
 
 void PrintMode(struct stat* st){
     if(st->st_mode & S_IFDIR) printf("d");  // directory
@@ -50,6 +51,7 @@ void PrintMode(struct stat* st){
     printf( (st->st_mode & S_IXOTH) ? "x" : "-");
 }
 
+//------------------------------------------------------------------------
 
 void PrintInode(struct dirent* read, struct CompileFlags * compile_flags){
     if(compile_flags->flag_i_ == 1){ // info
@@ -57,6 +59,7 @@ void PrintInode(struct dirent* read, struct CompileFlags * compile_flags){
     }
 }
 
+//------------------------------------------------------------------------
 
 void PrintLongListing(struct stat *st, struct CompileFlags * compile_flags){
     if(compile_flags->flag_l_ == 1){ // long listing
@@ -74,12 +77,29 @@ void PrintLongListing(struct stat *st, struct CompileFlags * compile_flags){
     }
 }
 
+//------------------------------------------------------------------------
 
 void PrintName(struct dirent* read, struct CompileFlags * compile_flags){
     printf("%s", read->d_name); // file name
     printf( (compile_flags->flag_l_ == 0 && compile_flags->flag_i_ == 0) ? "     " : "\n");
 }
 
+//------------------------------------------------------------------------
+
+int CheckD(char* path){
+    struct dirent* read;
+    DIR* dp_special = opendir(".");
+    //DIR* dp_special = opendir(path);
+    while (read = readdir(dp_special)) {
+        if(strcmp(path, read->d_name) == 0)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+//------------------------------------------------------------------------
 
 void Parse(char* path, struct CompileFlags * compile_flags){
     DIR* dp = opendir(path);
@@ -97,18 +117,42 @@ void Parse(char* path, struct CompileFlags * compile_flags){
 
     if(compile_flags->flag_d_ == 1){ // special case if we deal with directory
         if (path[strlen(path) - 1] == '/') path[strlen(path) - 1] = 0;
-        DIR* dp_special = opendir(".");
-        while (read = readdir(dp_special)) {
-            if(strcmp(path, read->d_name) == 0)
-            {
-                sprintf(pathtofile, "./%s", read->d_name);
-                stat(pathtofile, &st);
+        int flag = CheckD(path);
+        DIR* dp_special;
+        if(flag == 1){
+            dp_special = opendir(".");
+            while (read = readdir(dp_special)) {
+                if(strcmp(path, read->d_name) == 0)
+                {
+                    sprintf(pathtofile, "./%s", read->d_name);
+                    stat(pathtofile, &st);
 
-                PrintInode(read, compile_flags); // inode print
+                    PrintInode(read, compile_flags);
 
-                PrintLongListing(&st, compile_flags); // long listing print
+                    PrintLongListing(&st, compile_flags); // long listing print
 
-                PrintName(read, compile_flags); // print name
+                    PrintName(read, compile_flags);
+                }
+            }
+        }
+        else{
+            char path1[1024];
+            sprintf(path1, "%s/.", path);
+            printf("%s\n", path1);
+            dp_special = opendir(path1);
+            printf("special\n");
+            while (read = readdir(dp_special)) {
+                if(strcmp(".", read->d_name) == 0)
+                {
+                    sprintf(pathtofile, "./%s", read->d_name);
+                    stat(pathtofile, &st);
+
+                    PrintInode(read, compile_flags);
+
+                    PrintLongListing(&st, compile_flags); // long listing print
+
+                    PrintName(read, compile_flags);
+                }
             }
         }
     }
@@ -138,19 +182,21 @@ void Parse(char* path, struct CompileFlags * compile_flags){
         perror("Directory entry error");
     }
     closedir(dp);
-    
-    for(int i = 0; i < directories_iterator; i++){ // parsing deeper into directories
-        printf("\n%s:\n", directories_to_parse[i]);
-        Parse(directories_to_parse[i], compile_flags);
+    if(compile_flags->flag_d_ == 0){
+        for(int i = 0; i < directories_iterator; i++){
+            printf("\n%s:\n", directories_to_parse[i]);
+            Parse(directories_to_parse[i], compile_flags);
+        }
     }
     directories_iterator = 0;
 }
 
+//------------------------------------------------------------------------
 
 int main(int argc, char * argv[]) {
     struct CompileFlags compile_flags = {0, 0, 0, 0, 0};
 
-    static struct option longopts[] = { // add ability to use long flags versions
+    static struct option longopts[] = {
         { "long", no_argument, NULL, 'l'},
         { "inode", no_argument, NULL, 'i'},
         { "recursive", no_argument, NULL, 'R'},

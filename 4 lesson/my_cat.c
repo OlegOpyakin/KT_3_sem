@@ -45,11 +45,6 @@ int main(int argc, char * argv[]) {
                 exit(1);
             }
             ReadAndWWrite(fd);
-            fd = close(fd);
-            if(fd < 0){
-                perror("close failed");
-                exit(1);
-            }
         }
     }
     return 0;
