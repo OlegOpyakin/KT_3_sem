@@ -1,73 +1,87 @@
-#include <grp.h>
 #include <unistd.h>
-#include <sys/types.h>
-#include <sys/uio.h>
 #include <stdio.h>
-#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <semaphore.h>
-#include <sys/mman.h>
-#include <sys/stat.h> 
 #include <string.h>
-#include <fcntl.h>
+#include <errno.h>
 
-#define BUF_SIZE 4096
+const size_t BUFFER_SIZE = 1024;
+const char shm_filename[]   = "/pccat_shm";
+const char full_filename[]  = "/pccat_full_sem";
+const char emty_filename[]  = "/pccat_empty_sem";
 
-int main(int argc, char * argv[]) {
-
-    sem_t *empty, *full;
-    FILE* input;
-
-    input = fopen("text.txt", "r");
-    if(input == NULL){
-        perror("Input error");
-        exit(-1);
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        printf("Incorrect input");
+        return 0;    
     }
 
-    empty = sem_open("/empty_sem", O_CREAT, 0777, 1);
-    if (empty == SEM_FAILED) {
-        sem_close(empty);
-        perror("Failed to open semphore for empty");
-        exit(-1);
-    }
-
-    full = sem_open("/full_sem", O_CREAT, 0777, 0);
+    sem_t *full = sem_open(full_filename, O_CREAT, 0777, 0);
     if (full == SEM_FAILED) {
-        sem_close(full);
-        perror("Failed to open semphore for full");
-        exit(-1);
+        perror("full sem_open failed");
+        return 0;
     }
 
-    shm_unlink("/malex.hello03.01");
-	int fd = shm_open("/malex.hello03.01", O_RDWR | O_CREAT, 0777);
-    if (fd < 0) {
-        perror("shm open: ");
-        exit(-1);
+    sem_t *empty = sem_open(emty_filename, O_CREAT, 0777, 1);
+    if (empty == SEM_FAILED) {
+        perror("empty sem_open failed");
+        return 0;
     }
 
-    int err = ftruncate(fd, BUF_SIZE + sizeof(long int));
-    if (err < 0) {
-        perror("ftruncate: ");
-        exit(-1);
+    int file = open(argv[1], O_RDONLY);
+    if (file < 0) {
+        perror("file open failed");
+        return 0;
     }
 
-    char* ptr = (char*) mmap(NULL, BUF_SIZE + sizeof(long int), PROT_WRITE, MAP_SHARED, fd, 0);
-
-    *((long int*)(ptr + BUF_SIZE)) = 1;
-    while(*((long int*)(ptr + BUF_SIZE)) > 0)
-    {
-        if((sem_wait(empty)) < 0)
-            perror("empty_sem wait failed");
-        for(int i = 0; i < BUF_SIZE; i++)
-            ptr[i] = 0;
-        
-        *((long int*)(ptr + BUF_SIZE)) = (fread(ptr, 1, BUF_SIZE, input));
-
-        if((sem_post(full)) < 0)
-            perror("full_sem post failed");
+    int fd = shm_open(shm_filename, O_CREAT | O_RDWR, 0777);
+    if (fd < 0 && errno != EEXIST) {
+        perror("shm_open failed");
+        close(file);
+        return 0;
+    } else if (fd < 0 && errno == EEXIST) {
+        fd = shm_open(shm_filename, O_RDWR, 0777);
+        if (fd == -1) {
+            perror("shm_open failed (second attempt)");
+            close(file);
+            return 0;
+        }
     }
 
-    printf("pcat finished\n");
+    if (ftruncate(fd, BUFFER_SIZE + 1) < 0 && errno != EINVAL) {
+        perror("ftruncate failed");
+        close(file);
+        return 0;
+    }
 
-	return 0;
+    char *shmp = (char*) mmap(NULL, BUFFER_SIZE + 1, PROT_WRITE | PROT_READ, MAP_SHARED, fd, 0);
+    if (shmp == MAP_FAILED) {
+        perror("mmap failed");
+        close(file);
+        return 0;
+    }
+ 
+
+	while (1) {
+        sem_wait(empty);
+        int rd = read(file, shmp, BUFFER_SIZE);
+        if (rd < 0) {
+            perror("Read failed");
+            break;
+        }
+        else if (rd == 0) {
+            shmp[BUFFER_SIZE] = 'f';
+            sem_post(full);
+            break;
+        }
+        sem_post(full);
+	}
+    close(file);
+    munmap(shmp, BUFFER_SIZE);
+    shm_unlink(shm_filename);
+    sem_unlink(full_filename);
+    sem_unlink(emty_filename);
 }
